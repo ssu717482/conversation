@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话记录 · AI 客服管理后台</title>
+<meta name="description" content="统计 AI 客服效率指标，收集并导出 Badcase，辅助算法团队持续优化。">
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .dlg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+  .dlg-panel{background:#fff;color:#0a0a0a;border:1px solid #e5e5e5;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.22);width:100%;max-width:760px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+  .dlg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid #eee}
+  .dlg-body{padding:18px 20px;overflow-y:auto}
+  .dlg-close{border:0;background:transparent;cursor:pointer;font-size:20px;line-height:1;color:#737373;padding:4px 8px;border-radius:6px}
+  .dlg-close:hover{background:#f5f5f5;color:#0a0a0a}
+  .dlg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px}
+  @media(max-width:640px){.dlg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .dlg-k{font-size:11px;color:#737373;letter-spacing:.02em}
+  .dlg-v{font-size:13px;margin-top:2px;word-break:break-word}
+  .dlg-sec{margin-top:22px}
+  .dlg-sec-t{font-size:13px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .step{border:1px solid #eee;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fafafa}
+  .step-top{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600}
+  .step-io{font-size:12px;color:#525252;margin-top:6px;line-height:1.55;white-space:pre-wrap}
+  .step-io b{color:#737373;font-weight:500}
+  .msg{display:flex;gap:10px;margin-bottom:10px}
+  .msg-role{flex:0 0 62px;font-size:11px;color:#737373;padding-top:3px;text-align:right}
+  .msg-bubble{flex:1;background:#f5f5f5;border-radius:10px;padding:8px 11px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .msg.user .msg-bubble{background:#eff6ff}
+  .msg.agent .msg-bubble{background:#f0fdf4}
+  .msg-ts{font-size:10px;color:#a3a3a3;margin-top:4px}
+  .badge{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:1px 9px;font-size:11px;font-weight:600;color:#fff}
+  .badge.ok{background:oklch(69.6% .17 162.48)}
+  .badge.warn{background:oklch(76.9% .188 70.08)}
+  .badge.bad{background:oklch(57.7% .245 27.325)}
+  .badge.mute{background:#737373}
+  .range-custom{display:none;align-items:center;gap:8px}
+  .range-custom.show{display:flex}
+  .range-custom input{height:36px;border:1px solid #e5e5e5;border-radius:8px;padding:0 10px;font-size:13px;color:#0a0a0a;background:#fff;font-family:inherit}
+  .empty-row td{padding:36px 0;text-align:center;color:#737373;font-size:13px}
+  .tab-btn{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border-radius:6px;padding:4px 12px;font-size:14px;font-weight:500;cursor:pointer;border:0;background:transparent;color:inherit;font-family:inherit;transition:all .15s}
+  .tab-btn[data-state="active"]{background:#fff;color:#0a0a0a;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tab-btn:hover{color:#0a0a0a}
+</style>
+</head>
+<body>
+<div class="flex min-h-screen bg-muted/30 text-foreground">
+  <main class="flex-1 min-w-0">
+    <div class="mx-auto max-w-7xl px-6 py-6 md:px-10 md:py-8">
+      <div class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight">会话记录</h1>
+          <p class="mt-1 text-sm text-muted-foreground">共 <span id="totalCount" class="font-medium text-foreground">0</span> 条会话</p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <div class="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground" role="tablist" id="rangeTabs">
+            <button type="button" role="tab" data-range="0" data-state="inactive" class="tab-btn">今天</button>
+            <button type="button" role="tab" data-range="7" data-state="active" class="tab-btn">近 7 天</button>
+            <button type="button" role="tab" data-range="30" data-state="inactive" class="tab-btn">近 30 天</button>
+            <button type="button" role="tab" data-range="custom" data-state="inactive" class="tab-btn">指定范围</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border bg-card text-card-foreground shadow mb-4">
+        <div class="flex flex-wrap items-center gap-3 p-4">
+          <div class="relative flex-1 min-w-[220px]">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="searchInput" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm pl-8" placeholder="搜索会话 ID 或内容" value="">
+          </div>
+          <select id="statusSelect" class="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring w-[140px]" style="cursor:pointer">
+            <option value="all">全部状态</option>
+            <option value="AI已解决">AI已解决</option>
+            <option value="转人工解决">转人工解决</option>
+            <option value="未解决">未解决</option>
+          </select>
+          <div class="range-custom" id="customRange">
+            <input type="date" id="dateFrom"><span class="text-xs text-muted-foreground">至</span><input type="date" id="dateTo">
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border bg-card text-card-foreground shadow">
+        <div class="p-0">
+          <div class="relative w-full overflow-auto">
+            <table class="w-full caption-bottom text-sm">
+              <thead class="[&_tr]:border-b">
+                <tr class="border-b transition-colors hover:bg-muted/50">
+                  <th class="h-10 px-2 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">时间</th>
+                  <th class="h-10 px-2 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">会话 ID</th>
+                  <th class="h-10 px-2 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">状态</th>
+                  <th class="h-10 px-2 text-left align-middle font-medium text-muted-foreground whitespace-nowrap">用户首问</th>
+                  <th class="h-10 px-2 align-middle font-medium text-muted-foreground text-right whitespace-nowrap">Tokens</th>
+                  <th class="h-10 px-2 align-middle font-medium text-muted-foreground text-right whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+          <div class="border-t border-border p-3 text-center text-xs text-muted-foreground" id="footerNote"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="dialogRoot"></div>
+<script src="assets/app.js"></script>
+</body>
+</html>
